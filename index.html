@@ -101,6 +101,32 @@ details.manage[open] summary::after{content:"–"}
 .custom-list .row span{flex:1;min-width:0}
 .custom-list .row small{color:var(--muted)}
 .custom-list .row button{min-height:34px;padding:0 10px;font-size:14px;flex:none}
+.split-bar{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.split-row{display:flex;gap:8px}
+.split-row select{flex:1}
+.split-now{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent);color:var(--accent-fg);border-radius:999px;padding:2px 4px 2px 12px;font-weight:600;font-size:14px;max-width:100%}
+.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip button{background:transparent;color:inherit;min-height:30px;padding:0 8px;font-size:18px;line-height:1}
+.split-list{display:flex;flex-direction:column}
+.split-list .row{display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
+.split-list .row:first-child{border-top:0}
+.split-list .meta{flex:1;min-width:0}
+.split-list .meta b{display:block;font-family:var(--display);font-size:19px;text-transform:uppercase;letter-spacing:.02em}
+.split-list .meta small{color:var(--muted);font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.split-list .row button{min-height:34px;padding:0 10px;font-size:14px;flex:none}
+.split-list .row button.armed{background:var(--bad);color:#fff}
+.editor{display:flex;flex-direction:column;gap:10px;background:var(--sunk);border-radius:12px;padding:12px}
+.ed-list{display:flex;flex-direction:column;background:var(--surface);border-radius:10px;border:1px solid var(--line)}
+.ed-row{display:flex;align-items:center;gap:4px;padding:6px 6px 6px 10px;border-top:1px solid var(--line)}
+.ed-row:first-child{border-top:0}
+.ed-row .nr{font-family:var(--display);font-weight:700;color:var(--muted);width:20px;text-align:center;flex:none}
+.ed-row i{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
+.ed-row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ed-row button{background:transparent;color:var(--muted);min-height:36px;min-width:36px;padding:0;font-size:18px;flex:none}
+.ed-row button:disabled{opacity:.3}
+.ed-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.editor .btn-ghost{background:var(--surface);border:1px solid var(--line)}
 .filebtn{display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:10px;font-weight:600;cursor:pointer}
 .vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0)}
 .custom-list .row button.armed{background:var(--bad);color:#fff}
@@ -226,10 +252,11 @@ nav.tabs button[aria-selected="true"]{color:var(--accent);box-shadow:inset 0 3px
       </div>
       <div class="rowf">
         <label class="label" for="bw">Körpergewicht</label>
-        <div class="field"><input id="bw" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0,0"><span class="u">kg</span></div>
+        <div class="field"><input id="bw" type="text" inputmode="decimal" autocomplete="off" placeholder="0,0"><span class="u">kg</span></div>
         <span class="hint" id="bwHint"></span>
       </div>
     </div>
+    <div class="split-bar" id="splitBar"></div>
     <div class="cards" id="cards"></div>
     <div class="add-row">
       <select id="addSel" aria-label="Übung hinzufügen"></select>
@@ -246,6 +273,10 @@ nav.tabs button[aria-selected="true"]{color:var(--accent);box-shadow:inset 0 3px
         <span class="hint" id="newHint"></span>
         <div class="custom-list" id="customList"></div>
       </div>
+    </details>
+    <details class="manage" id="splitsBox">
+      <summary>Split-Trainings verwalten</summary>
+      <div class="manage-body" id="splitsBody"></div>
     </details>
     <details class="manage" id="backup">
       <summary>Backup</summary>
@@ -314,6 +345,7 @@ const blankSets = () => [{reps:"",weight:""},{reps:"",weight:""},{reps:"",weight
 let docs = {};
 let store = null;
 const custom = () => ((docs.settings && docs.settings.custom) || []);
+const splits = () => ((docs.settings && docs.settings.splits) || []);
 const hiddenList = () => ((docs.settings && docs.settings.hidden) || []);
 const knownExercises = () => BASE.concat(custom().map(c=>[c.name,c.group]));
 const allExercises = () => { const h=hiddenList(); return knownExercises().filter(e=>!h.includes(e[0])); };
@@ -372,7 +404,7 @@ function lastBW(beforeDate){
 }
 function loadDraft(date){
   const existing = docs[date];
-  if (hasTraining(existing)) draft = {date, entries: JSON.parse(JSON.stringify(existing.entries)), dirty:false};
+  if (hasTraining(existing)) draft = {date, entries: JSON.parse(JSON.stringify(existing.entries)), dirty:false, split: existing.split||null};
   else draft = {date, dirty:false, entries: DEFAULT_PLAN.filter(n=>!hiddenList().includes(n)).map(n=>{
     const l = lastFor(n, date);
     return {name:n, sets: l ? l.sets.map(s=>({reps:s.reps, weight:s.weight})) : blankSets()};
@@ -380,6 +412,7 @@ function loadDraft(date){
 }
 function summary(sets){
   if (!sets||!sets.length) return "";
+  if (sets.every(s=>s.weight===""||s.weight==null)) return sets.map(s=>s.reps||"–").join(" · ")+" Wdh.";
   const same = sets.every(s=>s.reps===sets[0].reps && s.weight===sets[0].weight);
   if (same) return sets.length+" × "+(sets[0].reps||"–")+" @ "+fmtKg(sets[0].weight);
   return sets.map(s=>(s.reps||"–")+"×"+(s.weight===""?"–":fmtN(+s.weight))).join(" · ")+" kg";
@@ -391,10 +424,19 @@ function dateLabel(d, withWeekday=true){
   if (dt.getFullYear() !== new Date().getFullYear()) o.year = "numeric";
   return dt.toLocaleDateString("de-DE", o);
 }
+// Beim Antippen den ganzen Wert markieren, damit er direkt überschrieben wird
+function selectOnTap(el){
+  let start=null;
+  const all=()=>{ if(document.activeElement!==el || el.value!==start) return; try{ el.setSelectionRange(0, el.value.length); }catch(e){ try{ el.select(); }catch(_){} } };
+  el.addEventListener("focus",()=>{ start=el.value; all(); requestAnimationFrame(all); setTimeout(all,60); setTimeout(all,180); });
+  el.addEventListener("mouseup",e=>{ if(start!==null && el.value===start && el.selectionStart===0 && el.selectionEnd===el.value.length) e.preventDefault(); });
+  el.addEventListener("blur",()=>{ start=null; });
+}
+selectOnTap(document.getElementById("bw"));
 function renderBW(){
   const inp=$("bw"), hint=$("bwHint");
   const cur = docs[draft.date];
-  if (document.activeElement !== inp) inp.value = hasBW(cur) ? cur.bodyweight : "";
+  if (document.activeElement !== inp) inp.value = hasBW(cur) ? String(cur.bodyweight).replace(".",",") : "";
   if (hint.dataset.flash) return;
   hint.className="hint";
   if (hasBW(cur)) hint.textContent = "Gespeichert";
@@ -438,13 +480,14 @@ function renderTrain(){
     en.sets.forEach((s,k)=>{
       const n=document.createElement("span"); n.className="n"; n.textContent=k+1;
       const r=document.createElement("div"); r.className="field";
-      r.innerHTML=`<input id="r${i}_${k}" type="number" inputmode="numeric" min="0" step="1" placeholder="0" aria-label="Wiederholungen Satz ${k+1}"><span class="u">×</span>`;
+      r.innerHTML=`<input id="r${i}_${k}" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="0" aria-label="Wiederholungen Satz ${k+1}"><span class="u">×</span>`;
       const w=document.createElement("div"); w.className="field";
-      w.innerHTML=`<input id="w${i}_${k}" type="number" inputmode="decimal" min="0" step="0.25" placeholder="0" aria-label="Gewicht Satz ${k+1}"><span class="u">kg</span>`;
+      w.innerHTML=`<input id="w${i}_${k}" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Gewicht Satz ${k+1}"><span class="u">kg</span>`;
       const ri=r.querySelector("input"), wi=w.querySelector("input");
-      ri.value=s.reps; wi.value=s.weight;
-      ri.oninput=()=>{ s.reps = ri.value===""?"":parseInt(ri.value,10); draft.dirty=true; };
-      wi.oninput=()=>{ s.weight = wi.value===""?"":parseFloat(wi.value.replace(",",".")); draft.dirty=true; };
+      ri.value=s.reps; wi.value = s.weight===""||s.weight==null ? "" : String(s.weight).replace(".",",");
+      selectOnTap(ri); selectOnTap(wi);
+      ri.oninput=()=>{ const c=ri.value.replace(/\D/g,""); if(c!==ri.value) ri.value=c; s.reps = c===""?"":parseInt(c,10); draft.dirty=true; };
+      wi.oninput=()=>{ const c=wi.value.replace(/[^0-9.,]/g,""); if(c!==wi.value) wi.value=c; const v=parseFloat(c.replace(",",".")); s.weight = c===""||isNaN(v)?"":v; draft.dirty=true; };
       grid.append(n,r,w);
     });
     wrap.append(card);
@@ -459,6 +502,8 @@ function renderTrain(){
   if (keep && [...add.options].some(o=>o.value===keep)) add.value=keep;
   $("saveBtn").textContent = savedFlash ? "✓ Gespeichert" : (hasTraining(docs[draft.date]) ? "Änderungen speichern" : "Training speichern");
   renderCustom();
+  renderSplitBar();
+  renderSplits();
 }
 function addToDraft(n){
   const l=lastFor(n, draft.date);
@@ -523,7 +568,8 @@ $("saveBtn").onclick=async()=>{
   const btn=$("saveBtn"); btn.classList.add("done"); clearTimeout(savedFlash);
   savedFlash=setTimeout(()=>{ savedFlash=null; btn.classList.remove("done"); renderTrain(); },1600);
   const obj = {...(docs[draft.date]||{}), date:draft.date, entries, savedAt:new Date().toISOString()};
-  docs[draft.date]=obj; draft.dirty=false;
+  if (draft.split) obj.split = draft.split; else delete obj.split;
+  docs[draft.date]=obj; draft.dirty=false; draft.keep=true; // Leere Sätze/Übungen bleiben bis zum Tageswechsel sichtbar
   try{ await store.save(draft.date,obj); toast("Gespeichert"); }
   catch(e){ toast("Speichern fehlgeschlagen. Prüfe deine Verbindung und versuch es nochmal."); }
   renderAll();
@@ -596,6 +642,153 @@ $("newBtn").onclick=async()=>{
 };
 $("newName").addEventListener("keydown",e=>{ if(e.key==="Enter") $("newBtn").click(); });
 
+// ---------- Splits ----------
+let splitEdit=null;      // {id|null, name, exercises:[...], err}
+let splitArmed=null;     // id, das auf Löschen-Bestätigung wartet
+let splitPending=null;   // Split, der auf "Ersetzen?" wartet
+function exerciseOptions(sel, exclude){
+  sel.textContent="";
+  Object.keys(GROUPS).forEach(g=>{
+    const og=document.createElement("optgroup"); og.label=g;
+    allExercises().filter(e=>e[1]===g && !exclude.includes(e[0])).forEach(e=>{ const o=document.createElement("option"); o.value=o.textContent=e[0]; og.append(o) });
+    if(og.children.length) sel.append(og);
+  });
+}
+function applySplit(sp){
+  draft.entries = sp.exercises.map(n=>({name:n, sets:blankSets()}));
+  draft.split = sp.name; draft.dirty = true; splitPending=null;
+  renderTrain();
+  toast("„"+sp.name+"“ geladen");
+}
+function renderSplitBar(){
+  const bar=$("splitBar"); bar.textContent="";
+  const list=splits();
+  if (draft.split){
+    const now=document.createElement("div"); now.className="split-now";
+    const chip=document.createElement("span"); chip.className="chip";
+    const t=document.createElement("span"); t.textContent=draft.split;
+    const x=document.createElement("button"); x.setAttribute("aria-label","Split-Bezeichnung entfernen"); x.textContent="×";
+    x.onclick=()=>{ draft.split=null; draft.dirty=true; renderTrain(); };
+    chip.append(t,x); now.append(chip); bar.append(now);
+  }
+  if (!list.length){
+    const b=document.createElement("button"); b.className="btn-ghost"; b.textContent="+ Split-Training anlegen";
+    b.onclick=()=>{ $("splitsBox").open=true; splitEdit={id:null,name:"",exercises:[]}; renderSplits(); $("splitsBox").scrollIntoView({behavior:"smooth",block:"start"}); };
+    bar.append(b); return;
+  }
+  const row=document.createElement("div"); row.className="split-row";
+  const sel=document.createElement("select"); sel.id="splitSel"; sel.setAttribute("aria-label","Split auswählen");
+  const o0=document.createElement("option"); o0.value=""; o0.textContent="Split wählen (optional)"; sel.append(o0);
+  list.forEach(sp=>{ const o=document.createElement("option"); o.value=sp.id; o.textContent=sp.name+" · "+sp.exercises.length+" Übungen"; sel.append(o); });
+  if (splitPending) sel.value=splitPending.id;
+  const b=document.createElement("button"); b.className="btn-ghost"; b.textContent="Laden";
+  b.onclick=()=>{
+    const sp=list.find(x=>x.id===sel.value);
+    if(!sp){ toast("Wähle zuerst einen Split aus."); return; }
+    const entered = draft.dirty && draft.entries.some(e=>e.sets.some(s=>s.reps!==""||s.weight!==""));
+    if (entered || hasTraining(docs[draft.date])){ splitPending=sp; renderSplitBar(); return; }
+    applySplit(sp);
+  };
+  row.append(sel,b); bar.append(row);
+  if (splitPending){
+    const c=document.createElement("div"); c.className="confirm";
+    const q=document.createElement("span"); q.className="label"; q.textContent="Übungen dieses Tages ersetzen?";
+    const yes=document.createElement("button"); yes.className="btn"; yes.textContent="Ersetzen";
+    const no=document.createElement("button"); no.className="btn-ghost"; no.textContent="Abbrechen";
+    const sp=splitPending;
+    yes.onclick=()=>applySplit(sp);
+    no.onclick=()=>{ splitPending=null; renderSplitBar(); };
+    c.append(q,yes,no); bar.append(c);
+  }
+}
+function renderSplits(){
+  const body=$("splitsBody"); body.textContent="";
+  const list=splits();
+  if (!splitEdit){
+    const intro=document.createElement("span"); intro.className="hint";
+    intro.textContent="Ein Split ist eine feste Übungsliste, z. B. Push, Pull oder Beine. Oben im Training kannst du ihn laden: jede Übung startet mit 3 leeren Sätzen.";
+    body.append(intro);
+    if (list.length){
+      const l=document.createElement("div"); l.className="split-list";
+      list.forEach(sp=>{
+        const r=document.createElement("div"); r.className="row";
+        const m=document.createElement("div"); m.className="meta";
+        const b=document.createElement("b"); b.textContent=sp.name;
+        const sm=document.createElement("small"); sm.textContent=sp.exercises.length+" Übungen · "+sp.exercises.join(", ");
+        m.append(b,sm);
+        const ed=document.createElement("button"); ed.className="btn-ghost"; ed.textContent="Bearbeiten";
+        ed.onclick=()=>{ splitArmed=null; splitEdit={id:sp.id, name:sp.name, exercises:sp.exercises.slice()}; renderSplits(); };
+        const del=document.createElement("button"); del.className="btn-ghost";
+        if (splitArmed===sp.id){ del.textContent="Sicher?"; del.classList.add("armed"); } else del.textContent="Löschen";
+        del.onclick=async()=>{
+          if (splitArmed!==sp.id){ splitArmed=sp.id; renderSplits(); return; }
+          splitArmed=null;
+          await saveSettings({splits: splits().filter(x=>x.id!==sp.id)});
+          toast("Split „"+sp.name+"“ gelöscht");
+        };
+        r.append(m,ed,del); l.append(r);
+      });
+      body.append(l);
+    }
+    const nb=document.createElement("button"); nb.className="btn"; nb.textContent="+ Neuer Split";
+    nb.onclick=()=>{ splitArmed=null; splitEdit={id:null,name:"",exercises:[]}; renderSplits(); };
+    body.append(nb);
+    return;
+  }
+  // Editor
+  const ed=document.createElement("div"); ed.className="editor";
+  const nl=document.createElement("label"); nl.className="label"; nl.htmlFor="spName"; nl.textContent=splitEdit.id?"Split bearbeiten":"Neuer Split";
+  const name=document.createElement("input"); name.id="spName"; name.type="text"; name.maxLength=30; name.placeholder="Name, z. B. Push, Oberkörper A"; name.value=splitEdit.name;
+  name.oninput=()=>{ splitEdit.name=name.value; };
+  ed.append(nl,name);
+  const lst=document.createElement("div"); lst.className="ed-list";
+  if (!splitEdit.exercises.length){ const e=document.createElement("div"); e.className="ed-row"; const sp=document.createElement("span"); sp.className="hint"; sp.textContent="Noch keine Übungen. Füge unten welche hinzu."; e.append(sp); lst.append(e); }
+  splitEdit.exercises.forEach((n,i)=>{
+    const r=document.createElement("div"); r.className="ed-row";
+    const nr=document.createElement("span"); nr.className="nr"; nr.textContent=i+1;
+    const dot=document.createElement("i"); dot.style.setProperty("--c", plate(n));
+    const t=document.createElement("span"); t.textContent=n;
+    const up=document.createElement("button"); up.textContent="↑"; up.setAttribute("aria-label",n+" nach oben"); up.disabled=i===0;
+    const dn=document.createElement("button"); dn.textContent="↓"; dn.setAttribute("aria-label",n+" nach unten"); dn.disabled=i===splitEdit.exercises.length-1;
+    const rm=document.createElement("button"); rm.textContent="×"; rm.setAttribute("aria-label",n+" entfernen");
+    const ex=splitEdit.exercises;
+    up.onclick=()=>{ [ex[i-1],ex[i]]=[ex[i],ex[i-1]]; renderSplits(); };
+    dn.onclick=()=>{ [ex[i+1],ex[i]]=[ex[i],ex[i+1]]; renderSplits(); };
+    rm.onclick=()=>{ ex.splice(i,1); renderSplits(); };
+    r.append(nr,dot,t,up,dn,rm); lst.append(r);
+  });
+  ed.append(lst);
+  const addRow=document.createElement("div"); addRow.className="split-row";
+  const as=document.createElement("select"); as.id="spAdd"; as.setAttribute("aria-label","Übung zum Split hinzufügen");
+  exerciseOptions(as, splitEdit.exercises);
+  const ab=document.createElement("button"); ab.className="btn-ghost"; ab.textContent="+ Übung";
+  ab.onclick=()=>{ if(as.value){ splitEdit.exercises.push(as.value); renderSplits(); } };
+  addRow.append(as,ab); ed.append(addRow);
+  if (draft.entries.length){
+    const tk=document.createElement("button"); tk.className="btn-ghost"; tk.textContent="Übungen vom aktuellen Training übernehmen";
+    tk.onclick=()=>{ draft.entries.forEach(e=>{ if(!splitEdit.exercises.includes(e.name)) splitEdit.exercises.push(e.name); }); renderSplits(); };
+    ed.append(tk);
+  }
+  const err=document.createElement("span"); err.className="hint err"; err.textContent=splitEdit.err||""; ed.append(err);
+  const acts=document.createElement("div"); acts.className="ed-actions";
+  const cancel=document.createElement("button"); cancel.className="btn-ghost"; cancel.textContent="Abbrechen";
+  cancel.onclick=()=>{ splitEdit=null; renderSplits(); };
+  const save=document.createElement("button"); save.className="btn"; save.textContent="Split speichern";
+  save.onclick=async()=>{
+    const nm=splitEdit.name.trim().replace(/\s+/g," ");
+    if(!nm){ splitEdit.err="Gib dem Split einen Namen."; renderSplits(); return; }
+    if(splits().some(x=>x.id!==splitEdit.id && x.name.toLowerCase()===nm.toLowerCase())){ splitEdit.err="Einen Split „"+nm+"“ gibt es schon."; renderSplits(); return; }
+    if(!splitEdit.exercises.length){ splitEdit.err="Füge mindestens eine Übung hinzu."; renderSplits(); return; }
+    const rec={id: splitEdit.id || ("s"+Date.now().toString(36)), name:nm, exercises:splitEdit.exercises.slice()};
+    const next = splitEdit.id ? splits().map(x=>x.id===rec.id?rec:x) : splits().concat([rec]);
+    splitEdit=null;
+    await saveSettings({splits: next});
+    toast("Split „"+nm+"“ gespeichert");
+  };
+  acts.append(cancel,save); ed.append(acts);
+  body.append(ed);
+}
+
 // ---------- Backup ----------
 function bkMsg(t,cls){ const h=$("bkHint"); h.textContent=t; h.className="hint "+(cls||""); }
 $("expBtn").onclick=async()=>{
@@ -642,7 +835,9 @@ $("impFile").onchange=async()=>{
       const custom=(cur.custom||[]).slice();
       (inc.settings.custom||[]).forEach(c=>{ if(c && c.name && !custom.some(x=>x.name===c.name)) custom.push({name:c.name, group:GROUPS[c.group]?c.group:"Sonstiges"}); });
       const hidden=[...new Set((cur.hidden||[]).concat(inc.settings.hidden||[]))];
-      const obj={...cur, custom, hidden}; docs.settings=obj;
+      const sp=(cur.splits||[]).slice();
+      (inc.settings.splits||[]).forEach(x=>{ if(x && x.name && Array.isArray(x.exercises) && !sp.some(y=>y.name.toLowerCase()===x.name.toLowerCase())) sp.push({id:x.id||("s"+Date.now().toString(36)+sp.length), name:x.name, exercises:x.exercises.filter(n=>typeof n==="string")}); });
+      const obj={...cur, custom, hidden, splits:sp}; docs.settings=obj;
       try{ await store.save("settings",obj); }catch(e){ fails++; }
     }
     if (draft) draft.dirty=false;
@@ -703,6 +898,7 @@ function renderDetail(){
     actions.append(del);
   }
   head.append(actions); box.append(head);
+  if (hasTraining(w) && w.split){ const p=document.createElement("div"); p.className="bwline"; p.innerHTML="Split: <b></b>"; p.querySelector("b").textContent=w.split; box.append(p); }
   if (hasBW(w)){ const p=document.createElement("div"); p.className="bwline"; p.innerHTML="Körpergewicht: <b></b>"; p.querySelector("b").textContent=fmtKg(w.bodyweight); box.append(p); }
   if(!hasTraining(w)){ const e=document.createElement("div"); e.className="empty"; e.textContent="An diesem Tag ist kein Training gespeichert. Tage mit Training haben farbige Punkte."; box.append(e); return; }
   w.entries.forEach(en=>{
@@ -710,7 +906,7 @@ function renderDetail(){
     const t=document.createElement("div"); t.className="title"; t.textContent=en.name; c.append(t);
     const tb=document.createElement("table");
     let vol=0;
-    en.sets.forEach((s,k)=>{ const tr=tb.insertRow(); tr.insertCell().textContent="Satz "+(k+1); tr.insertCell().textContent=(s.reps===""?"–":s.reps)+" Wdh."; tr.insertCell().textContent=fmtKg(s.weight); vol+=(+s.reps||0)*(+s.weight||0); });
+    en.sets.forEach((s,k)=>{ const tr=tb.insertRow(); tr.insertCell().textContent="Satz "+(k+1); tr.insertCell().textContent=(s.reps===""?"–":s.reps)+" Wdh."; tr.insertCell().textContent=(s.weight===""||s.weight==null)?"Körpergew.":fmtKg(s.weight); vol+=(+s.reps||0)*(+s.weight||0); });
     c.append(tb);
     if(vol){ const v=document.createElement("div"); v.className="vol num"; v.textContent="Volumen: "+fmtN(vol)+" kg"; c.append(v); }
     box.append(c);
@@ -721,7 +917,7 @@ $("nextM").onclick=()=>{calMonth=new Date(calMonth.getFullYear(),calMonth.getMon
 
 // ---------- Statistik ----------
 const BW_KEY = "__bw";
-const st = { sel:null, range:"all", from:"", to:"", ymin:"", ymax:"", demo:false, tip:-1 };
+const st = { sel:null, metric:null, range:"all", from:"", to:"", ymin:"", ymax:"", demo:false, tip:-1 };
 let demoDocs = null;
 function makeDemo(){
   const out={}; const now=toMs(TODAY);
@@ -743,22 +939,27 @@ function seriesFor(sel){
   if (sel===BW_KEY) return {unit:"kg", kind:"bw", pts: keys.filter(d=>hasBW(S[d])).map(d=>({d, t:toMs(d), v:+S[d].bodyweight}))};
   const sessions = keys.map(d=>({d, e:(S[d].entries||[]).find(x=>x.name===sel)})).filter(x=>x.e && x.e.sets.length);
   const weighted = sessions.some(x=>x.e.sets.some(s=>s.weight!==""&&s.weight!=null&&+s.weight>0));
+  let metric = st.metric;
+  if (!metric || (metric==="kg" && !weighted)) metric = weighted ? "kg" : "max";
   const pts=[]; let best=null;
   sessions.forEach(({d,e})=>{
-    let v, reps;
-    if (weighted){
+    let v, reps, setsTxt="";
+    if (metric==="kg"){
       const ws=e.sets.filter(s=>s.weight!==""&&s.weight!=null);
       if(!ws.length) return;
       v=Math.max(...ws.map(s=>+s.weight));
       reps=Math.max(0,...ws.filter(s=>+s.weight===v).map(s=>+s.reps||0));
     } else {
-      v=Math.max(0,...e.sets.map(s=>+s.reps||0)); if(!v) return; reps=v;
+      const r=e.sets.map(s=>+s.reps||0).filter(x=>x>0);
+      if(!r.length) return;
+      v = metric==="max" ? Math.max(...r) : r.reduce((a,b)=>a+b,0);
+      reps=v; setsTxt=r.join(" · ");
     }
     const pr = best!==null && v>best;
     best = best===null ? v : Math.max(best,v);
-    pts.push({d, t:toMs(d), v, reps, pr, best, e1rm: weighted && reps>1 ? v*(1+reps/30) : (weighted? v : null)});
+    pts.push({d, t:toMs(d), v, reps, setsTxt, pr, best, e1rm: metric==="kg" ? (reps>1 ? v*(1+reps/30) : v) : null});
   });
-  return {unit: weighted?"kg":"Wdh.", kind: weighted?"kg":"reps", pts};
+  return {unit: metric==="kg"?"kg":"Wdh.", kind: metric==="kg"?"kg":"reps", metric, weighted, pts};
 }
 function xDomain(pts){
   const now=toMs(TODAY);
@@ -825,10 +1026,17 @@ function renderStats(){
   const valid=[...sel.options].map(o=>o.value);
   if (!valid.includes(st.sel)) st.sel = valid.find(v=>v!==BW_KEY) || valid[0];
   sel.value=st.sel;
-  sel.onchange=()=>{ st.sel=sel.value; st.ymin=""; st.ymax=""; st.tip=-1; renderStats(); };
+  sel.onchange=()=>{ st.sel=sel.value; st.metric=null; st.ymin=""; st.ymax=""; st.tip=-1; renderStats(); };
   selWrap.append(sel); box.append(selWrap);
 
   const ser=seriesFor(st.sel);
+  if (ser.kind!=="bw"){
+    const mseg=document.createElement("div"); mseg.className="seg"; mseg.setAttribute("aria-label","Kennzahl");
+    const opts=[["kg","Gewicht"],["max","Max. Wdh."],["sum","Wdh. gesamt"]].filter(o=>o[0]!=="kg"||ser.weighted);
+    opts.forEach(([k,l])=>{ const b=document.createElement("button"); b.textContent=l; b.setAttribute("aria-pressed", ser.metric===k);
+      b.onclick=()=>{ st.metric=k; st.ymin=""; st.ymax=""; st.tip=-1; renderStats(); }; mseg.append(b); });
+    box.append(mseg);
+  }
   const [x0,x1]=xDomain(ser.pts);
   const vis=ser.pts.filter(p=>p.t>=x0 && p.t<=x1);
 
@@ -893,7 +1101,7 @@ function renderStats(){
   const lg=document.createElement("div"); lg.className="legend"; lg.style.marginTop="0";
   lg.innerHTML = ser.kind==="bw"
     ? '<span><i class="lg-line"></i>Körpergewicht</span>'
-    : `<span><i class="lg-line"></i>${ser.kind==="reps"?"Max. Wiederholungen":"Schwerster Satz der Einheit"}</span><span><i class="lg-dash"></i>PR-Verlauf</span><span><i class="lg-pr"></i>Neuer PR</span>`;
+    : `<span><i class="lg-line"></i>${ser.metric==="max"?"Bester Satz (Wdh.)":ser.metric==="sum"?"Wiederholungen gesamt pro Einheit":"Schwerster Satz der Einheit"}</span><span><i class="lg-dash"></i>PR-Verlauf</span><span><i class="lg-pr"></i>Neuer PR</span>`;
   card.append(lg);
   box.append(card);
 
@@ -916,7 +1124,7 @@ function renderStats(){
   } else {
     tb.innerHTML = ser.kind==="kg"
       ? '<thead><tr><th>Datum</th><th class="r">Schwerster Satz</th><th class="r">Gesch. 1RM</th></tr></thead>'
-      : '<thead><tr><th>Datum</th><th class="r">Max. Wdh.</th></tr></thead>';
+      : '<thead><tr><th>Datum</th><th class="r">'+(ser.metric==="sum"?"Wdh. gesamt":"Max. Wdh.")+'</th><th class="r">Sätze</th></tr></thead>';
     const body=tb.createTBody();
     rows.forEach(p=>{
       const tr=body.insertRow();
@@ -925,6 +1133,7 @@ function renderStats(){
       if(p.pr){ const b=document.createElement("span"); b.className="badge"; b.textContent="PR"; c1.append(b); }
       const c2=tr.insertCell(); c2.className="r";
       c2.textContent = ser.kind==="kg" ? fmtKg(p.v)+(p.reps?" × "+p.reps:"") : p.v+" Wdh.";
+      if (ser.kind==="reps"){ const c3=tr.insertCell(); c3.className="r"; c3.style.color="var(--muted)"; c3.textContent=p.setsTxt; }
       if (ser.kind==="kg"){ const c3=tr.insertCell(); c3.className="r"; c3.textContent = p.e1rm? "≈ "+fmtN(Math.round(p.e1rm*2)/2)+" kg" : "–"; }
     });
   }
@@ -1017,7 +1226,7 @@ function toast(m){ const t=$("toast"); t.textContent=m; t.hidden=false; clearTim
 
 function renderAll(){
   // Ungespeicherte Eingaben bleiben erhalten, wenn neue Daten eintreffen
-  if (!draft || !draft.dirty) loadDraft(draft ? draft.date : TODAY);
+  if (!draft || (!draft.dirty && !draft.keep)) loadDraft(draft ? draft.date : TODAY);
   renderTrain();
   if(!$("view-cal").hidden) renderCal();
   if(!$("view-stats").hidden) renderStats();
